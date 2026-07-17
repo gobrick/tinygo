@@ -89,12 +89,30 @@ type SPI struct {
 	AltFuncSelector uint8
 }
 
-func (spi *SPI) config8Bits() {}
+func (spi *SPI) config8Bits() {
+	spi.Bus.CR1.ClearBits(stm32.SPI_CR1_DFF)
+}
+
+// Reset pulse: the bootloader may leave CR1/CR2/DMA state behind.
+func (spi *SPI) resetPeripheral() {
+	if unsafe.Pointer(spi.Bus) == unsafe.Pointer(stm32.SPI1) {
+		stm32.RCC.APB2RSTR.SetBits(1 << stm32.RCC_APB2RSTR_SPI1RST_Pos)
+		stm32.RCC.APB2RSTR.ClearBits(1 << stm32.RCC_APB2RSTR_SPI1RST_Pos)
+	}
+}
 
 func (spi *SPI) configurePins(config SPIConfig) {
+	spi.resetPeripheral()
 	config.SCK.ConfigureAltFunc(PinConfig{Mode: PinModeSPICLK}, spi.AltFuncSelector)
 	config.SDO.ConfigureAltFunc(PinConfig{Mode: PinModeSPISDO}, spi.AltFuncSelector)
 	config.SDI.ConfigureAltFunc(PinConfig{Mode: PinModeSPISDI}, spi.AltFuncSelector)
+	config.SCK.setHighSpeed()
+	config.SDO.setHighSpeed()
+}
+
+func (p Pin) setHighSpeed() {
+	pos := uint8(p%16) * 2
+	p.getPort().OSPEEDR.ReplaceBits(3, 0x3, pos)
 }
 
 func (spi *SPI) getBaudRate(config SPIConfig) uint32 {
