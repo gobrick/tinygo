@@ -2,7 +2,7 @@
  * lib/pbio/platform/prime_hub_f4/platform.ld. */
 MEMORY
 {
-    FLASH_TEXT (rw) : ORIGIN = 0x08010000, LENGTH = 960K
+    FLASH_TEXT (rw) : ORIGIN = 0x08010000, LENGTH = 832K
     RAM (xrw)       : ORIGIN = 0x20000000, LENGTH = 320K
 }
 
