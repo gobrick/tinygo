@@ -1,0 +1,10 @@
+{
+  "inherits": ["cortex-m4"],
+  "build-tags": ["spikehub", "stm32f413", "stm32f4", "stm32"],
+  "serial": "none",
+  "automatic-stack-size": false,
+  "linkerscript": "targets/spikehub.ld",
+  "extra-files": [
+    "src/device/stm32/stm32f413.s"
+  ]
+}

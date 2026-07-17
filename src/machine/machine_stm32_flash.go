@@ -1,4 +1,4 @@
-//go:build stm32f4 || stm32l4 || stm32wlx
+//go:build (stm32f4 || stm32l4 || stm32wlx) && !stm32f413
 
 package machine
 
