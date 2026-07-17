@@ -48,23 +48,23 @@ func (p Pin) enableClock() {
 	stm32.RCC.AHB1ENR.SetBits(1 << port)
 }
 
-var TIM3 = TIM{
+var TIM2 = TIM{
 	EnableRegister: &stm32.RCC.APB1ENR,
-	EnableFlag:     stm32.RCC_APB1ENR_TIM3EN,
-	Device:         stm32.TIM3,
+	EnableFlag:     stm32.RCC_APB1ENR_TIM2EN,
+	Device:         stm32.TIM2,
 	busFreq:        APB1_TIM_FREQ,
 }
 
 func (t *TIM) registerUPInterrupt() interrupt.Interrupt {
-	if t == &TIM3 {
-		return interrupt.New(stm32.IRQ_TIM3, TIM3.handleUPInterrupt)
+	if t == &TIM2 {
+		return interrupt.New(stm32.IRQ_TIM2, TIM2.handleUPInterrupt)
 	}
 	return interrupt.Interrupt{}
 }
 
 func (t *TIM) registerOCInterrupt() interrupt.Interrupt {
-	if t == &TIM3 {
-		return interrupt.New(stm32.IRQ_TIM3, TIM3.handleOCInterrupt)
+	if t == &TIM2 {
+		return interrupt.New(stm32.IRQ_TIM2, TIM2.handleOCInterrupt)
 	}
 	return interrupt.Interrupt{}
 }
