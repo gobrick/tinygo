@@ -6,6 +6,7 @@ import (
 	"device/stm32"
 	"runtime/interrupt"
 	"runtime/volatile"
+	"unsafe"
 )
 
 var deviceIDAddr = []uintptr{0x1FFF7A10, 0x1FFF7A14, 0x1FFF7A18}
@@ -81,4 +82,41 @@ const PSC_MAX = 0x10000
 func initRNG() {
 	stm32.RCC.AHB2ENR.SetBits(stm32.RCC_AHB2ENR_RNGEN)
 	stm32.RNG.CR.SetBits(stm32.RNG_CR_RNGEN)
+}
+
+type SPI struct {
+	Bus             *stm32.SPI_Type
+	AltFuncSelector uint8
+}
+
+func (spi *SPI) config8Bits() {}
+
+func (spi *SPI) configurePins(config SPIConfig) {
+	config.SCK.ConfigureAltFunc(PinConfig{Mode: PinModeSPICLK}, spi.AltFuncSelector)
+	config.SDO.ConfigureAltFunc(PinConfig{Mode: PinModeSPISDO}, spi.AltFuncSelector)
+	config.SDI.ConfigureAltFunc(PinConfig{Mode: PinModeSPISDI}, spi.AltFuncSelector)
+}
+
+func (spi *SPI) getBaudRate(config SPIConfig) uint32 {
+	clock := uint32(16000000)
+	freq := config.Frequency
+	if freq < clock/256 {
+		freq = clock / 256
+	}
+	if freq > clock/2 {
+		freq = clock / 2
+	}
+	divisor := uint32(2)
+	br := uint32(0)
+	for divisor < 256 && clock/divisor > freq {
+		divisor *= 2
+		br++
+	}
+	return br << stm32.SPI_CR1_BR_Pos
+}
+
+func enableAltFuncClock(bus unsafe.Pointer) {
+	if bus == unsafe.Pointer(stm32.SPI1) {
+		stm32.RCC.APB2ENR.SetBits(stm32.RCC_APB2ENR_SPI1EN)
+	}
 }

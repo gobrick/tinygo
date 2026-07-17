@@ -5,6 +5,7 @@
   "automatic-stack-size": false,
   "linkerscript": "targets/spikehub.ld",
   "extra-files": [
-    "src/device/stm32/stm32f413.s"
+    "src/device/stm32/stm32f413.s",
+    "src/runtime/runtime_spikehub.S"
   ]
 }
