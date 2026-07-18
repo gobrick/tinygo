@@ -1,8 +1,8 @@
-/* Layout: pybricks/pybricks-micropython@76bfc071652a91c6b5d443dbfa55f1f0fa7933cd
- * lib/pbio/platform/prime_hub_f4/platform.ld. */
+/* Stock frozen loader jumps to 0x08008000 (S2 vector-table probe, 2026-07-17;
+ * matches spike-rt deploy address). Sector 11 stays reserved for breadcrumbs. */
 MEMORY
 {
-    FLASH_TEXT (rw) : ORIGIN = 0x08010000, LENGTH = 832K
+    FLASH_TEXT (rw) : ORIGIN = 0x08008000, LENGTH = 864K
     RAM (xrw)       : ORIGIN = 0x20000000, LENGTH = 320K
 }
 

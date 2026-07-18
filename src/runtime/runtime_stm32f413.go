@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	applicationFlashOrigin = 0x08010000
+	applicationFlashOrigin = 0x08008000
 	HCLK_FREQ_HZ           = 16000000
 	PCLK1_FREQ_HZ          = HCLK_FREQ_HZ
 	PCLK2_FREQ_HZ          = HCLK_FREQ_HZ
