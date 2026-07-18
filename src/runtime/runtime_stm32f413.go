@@ -16,6 +16,7 @@ const (
 )
 
 func init() {
+	arm.DisableInterrupts()
 	bootloaderHandoffAssumptions()
 	initVectorTable()
 	normalizeExceptions()
@@ -25,9 +26,8 @@ func init() {
 	arm.EnableInterrupts(0)
 }
 
-// Bootloader handoff: MSP loads from vector word 0; BASEPRI assumed zero
-// (no clean device/arm accessor); a fault before this init still vectors
-// through the loader table until VTOR is set below.
+// Bootloader handoff: MSP loads from vector word 0; a fault before this init
+// still vectors through the loader table until VTOR is set below.
 func bootloaderHandoffAssumptions() {}
 
 func initVectorTable() {
@@ -37,12 +37,13 @@ func initVectorTable() {
 }
 
 func normalizeExceptions() {
-	arm.DisableInterrupts()
 	arm.SYST.SYST_CSR.ClearBits(arm.SYST_CSR_TICKINT | arm.SYST_CSR_ENABLE)
+	arm.SCB.ICSR.SetBits(arm.SCB_ICSR_PENDSTCLR | arm.SCB_ICSR_PENDSVCLR)
 	for word := range arm.NVIC.ICER {
 		arm.NVIC.ICER[word].Set(0xffffffff)
 		arm.NVIC.ICPR[word].Set(0xffffffff)
 	}
+	arm.AsmFull("msr BASEPRI, {b}", map[string]interface{}{"b": uint32(0)})
 }
 
 func initClockHSI16() {

@@ -113,9 +113,10 @@ func (spi *SPI) configurePins(config SPIConfig) {
 }
 
 func (p Pin) configurePushPullNoPullHighSpeed() {
-	pos := uint8(p%16) * 2
+	pin := uint8(p % 16)
+	pos := pin * 2
 	port := p.getPort()
-	port.OTYPER.ReplaceBits(stm32.GPIO_OTYPER_OT0_PushPull, stm32.GPIO_OTYPER_OT0_Msk, pos/2)
+	port.OTYPER.ReplaceBits(stm32.GPIO_OTYPER_OT0_PushPull, uint32(1), pin)
 	port.PUPDR.ReplaceBits(gpioPullFloating, gpioPullMask, pos)
 	port.OSPEEDR.ReplaceBits(gpioOutputSpeedHigh, gpioOutputSpeedMask, pos)
 }
