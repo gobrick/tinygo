@@ -3,6 +3,7 @@
   "build-tags": ["spikehub", "stm32f413", "stm32f4", "stm32"],
   "serial": "none",
   "automatic-stack-size": false,
+  "default-stack-size": 16384,
   "linkerscript": "targets/spikehub.ld",
   "extra-files": [
     "src/device/stm32/stm32f413.s",

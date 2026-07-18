@@ -4,6 +4,7 @@ package machine
 
 import (
 	"device/stm32"
+	"errors"
 	"runtime/interrupt"
 	"runtime/volatile"
 	"unsafe"
@@ -137,6 +138,72 @@ func (spi *SPI) getBaudRate(config SPIConfig) uint32 {
 		br++
 	}
 	return br << stm32.SPI_CR1_BR_Pos
+}
+
+// Tx sends w and reads into r. A write-only transfer (r == nil) uses a
+// transmit-only path that waits on TXE/BSY (not RXNE) and returns an error if
+// TXE stalls, so the caller can skip latching an incomplete frame.
+func (spi *SPI) Tx(w, r []byte) error {
+	switch {
+	case r == nil:
+		return spi.transmit(w)
+	case w == nil:
+		for i := range r {
+			b, err := spi.Transfer(0)
+			if err != nil {
+				return err
+			}
+			r[i] = b
+		}
+		return nil
+	default:
+		if len(w) != len(r) {
+			return ErrTxInvalidSliceSize
+		}
+		for i, b := range w {
+			got, err := spi.Transfer(b)
+			if err != nil {
+				return err
+			}
+			r[i] = got
+		}
+		return nil
+	}
+}
+
+// spiWaitLimit bounds each SPI status spin: a few milliseconds at 16MHz, far
+// above a byte time (~1us) yet imperceptible in the display loop.
+const spiWaitLimit = 1 << 12
+
+var errSPITimeout = errors.New("machine: SPI transmit timeout")
+
+// transmit clocks out every byte transmit-only. A per-byte TXE stall aborts with
+// an error so the caller skips the latch; the terminal TXE/BSY can stay asserted
+// on this write-only path once the frame has shifted, so a timeout there is fine.
+func (spi *SPI) transmit(w []byte) error {
+	dr := (*volatile.Register8)(unsafe.Pointer(&spi.Bus.DR.Reg))
+	for _, b := range w {
+		if !spi.awaitSR(stm32.SPI_SR_TXE, true) {
+			return errSPITimeout
+		}
+		dr.Set(b)
+	}
+	spi.awaitSR(stm32.SPI_SR_TXE, true)
+	spi.awaitSR(stm32.SPI_SR_BSY, false)
+	_ = spi.Bus.DR.Get()
+	_ = spi.Bus.SR.Get()
+	return nil
+}
+
+// awaitSR spins until SR flag equals set (returns true) or gives up after
+// spiWaitLimit iterations (returns false) so a stuck status bit cannot hang.
+func (spi *SPI) awaitSR(flag uint32, set bool) bool {
+	for i := 0; i < spiWaitLimit; i++ {
+		if spi.Bus.SR.HasBits(flag) == set {
+			return true
+		}
+	}
+	return false
 }
 
 func enableAltFuncClock(bus unsafe.Pointer) {
