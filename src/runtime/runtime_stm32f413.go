@@ -18,23 +18,31 @@ const (
 func init() {
 	bootloaderHandoffAssumptions()
 	initVectorTable()
+	normalizeExceptions()
 	initClockHSI16()
 	resetTickTimer()
 	initTickTimer(&machine.TIM2)
+	arm.EnableInterrupts(0)
 }
 
-// Bootloader handoff assumptions:
-// - MSP is loaded from this image's vector word 0.
-// - No peripheral IRQ remains enabled or pending.
-// - RCC state may be arbitrary and is replaced below.
-// - Cortex-M startup copies .data and clears .bss.
-// Residual window: a fault raised before this init runs vectors through
-// the bootloader table; unavoidable without upstream Reset_Handler
-// changes. Revisited with hardware evidence in PR 2.
+// Bootloader handoff: MSP loads from vector word 0; BASEPRI assumed zero
+// (no clean device/arm accessor); a fault before this init still vectors
+// through the loader table until VTOR is set below.
 func bootloaderHandoffAssumptions() {}
 
 func initVectorTable() {
 	arm.SCB.VTOR.Set(applicationFlashOrigin)
+	arm.Asm("dsb")
+	arm.Asm("isb")
+}
+
+func normalizeExceptions() {
+	arm.DisableInterrupts()
+	arm.SYST.SYST_CSR.ClearBits(arm.SYST_CSR_TICKINT | arm.SYST_CSR_ENABLE)
+	for word := range arm.NVIC.ICER {
+		arm.NVIC.ICER[word].Set(0xffffffff)
+		arm.NVIC.ICPR[word].Set(0xffffffff)
+	}
 }
 
 func initClockHSI16() {
@@ -43,8 +51,6 @@ func initClockHSI16() {
 	for !stm32.RCC.CR.HasBits(stm32.RCC_CR_HSIRDY) {
 	}
 
-	// Conservative APB divisors first: a hot handoff clock stays legal
-	// while the switch to HSI drains.
 	stm32.RCC.CFGR.ReplaceBits(
 		stm32.RCC_CFGR_PPRE1_Div4<<stm32.RCC_CFGR_PPRE1_Pos|
 			stm32.RCC_CFGR_PPRE2_Div4<<stm32.RCC_CFGR_PPRE2_Pos,

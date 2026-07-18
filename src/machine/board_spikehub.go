@@ -28,11 +28,22 @@ var (
 // 8 MHz at HSI16 is below the TLC5955 33 MHz limit (pybricks@76bfc071: platform.c; TLC5955).
 const GSCLKFrequency = 8_000_000
 
+func ConfigureLAT() {
+	LAT.Configure(PinConfig{Mode: PinOutput})
+	LAT.configurePushPullNoPullHighSpeed()
+	LAT.Low()
+}
+
 func ConfigureGSCLK() {
 	GSCLK.ConfigureAltFunc(PinConfig{Mode: PinModePWMOutput}, AF9_TIM12)
+	GSCLK.configurePushPullNoPullHighSpeed()
 	stm32.RCC.APB1ENR.SetBits(stm32.RCC_APB1ENR_TIM12EN)
 	stm32.RCC.APB1RSTR.SetBits(stm32.RCC_APB1RSTR_TIM12RST)
 	stm32.RCC.APB1RSTR.ClearBits(stm32.RCC_APB1RSTR_TIM12RST)
+	stm32.TIM12.CR1.Set(0)
+	stm32.TIM12.DIER.Set(0)
+	stm32.TIM12.CCER.Set(0)
+	stm32.TIM12.SR.Set(0)
 	top := uint32(APB1_TIM_FREQ / GSCLKFrequency)
 	stm32.TIM12.PSC.Set(0)
 	stm32.TIM12.ARR.Set(top - 1)

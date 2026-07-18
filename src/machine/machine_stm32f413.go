@@ -98,6 +98,8 @@ func (spi *SPI) resetPeripheral() {
 	if unsafe.Pointer(spi.Bus) == unsafe.Pointer(stm32.SPI1) {
 		stm32.RCC.APB2RSTR.SetBits(1 << stm32.RCC_APB2RSTR_SPI1RST_Pos)
 		stm32.RCC.APB2RSTR.ClearBits(1 << stm32.RCC_APB2RSTR_SPI1RST_Pos)
+		spi.Bus.CR1.Set(0)
+		spi.Bus.CR2.Set(0)
 	}
 }
 
@@ -106,13 +108,16 @@ func (spi *SPI) configurePins(config SPIConfig) {
 	config.SCK.ConfigureAltFunc(PinConfig{Mode: PinModeSPICLK}, spi.AltFuncSelector)
 	config.SDO.ConfigureAltFunc(PinConfig{Mode: PinModeSPISDO}, spi.AltFuncSelector)
 	config.SDI.ConfigureAltFunc(PinConfig{Mode: PinModeSPISDI}, spi.AltFuncSelector)
-	config.SCK.setHighSpeed()
-	config.SDO.setHighSpeed()
+	config.SCK.configurePushPullNoPullHighSpeed()
+	config.SDO.configurePushPullNoPullHighSpeed()
 }
 
-func (p Pin) setHighSpeed() {
+func (p Pin) configurePushPullNoPullHighSpeed() {
 	pos := uint8(p%16) * 2
-	p.getPort().OSPEEDR.ReplaceBits(3, 0x3, pos)
+	port := p.getPort()
+	port.OTYPER.ReplaceBits(stm32.GPIO_OTYPER_OT0_PushPull, stm32.GPIO_OTYPER_OT0_Msk, pos/2)
+	port.PUPDR.ReplaceBits(gpioPullFloating, gpioPullMask, pos)
+	port.OSPEEDR.ReplaceBits(gpioOutputSpeedHigh, gpioOutputSpeedMask, pos)
 }
 
 func (spi *SPI) getBaudRate(config SPIConfig) uint32 {
