@@ -671,6 +671,7 @@ func armUSBOUT(ep uint32) {
 func handleUSBSetAddress(setup usb.Setup) bool {
 	stm32USBAddress = setup.WValueL & 0x7f
 	stm32USBAddressPending = true
+	usbRegister(regDCFG).ReplaceBits(uint32(stm32USBAddress)<<4, dcfgDADMask, 0)
 	SendZlp()
 	return true
 }
