@@ -6,6 +6,7 @@ import (
 	"device/arm"
 	"device/stm32"
 	"machine"
+	_ "machine/usb/cdc"
 )
 
 const (
@@ -23,6 +24,8 @@ func init() {
 	initClockHSI16()
 	resetTickTimer()
 	initTickTimer(&machine.TIM2)
+	machine.TIM2.UpInterrupt.SetPriority(0xc0)
+	machine.InitSerial()
 	arm.EnableInterrupts(0)
 }
 
@@ -43,6 +46,7 @@ func normalizeExceptions() {
 		arm.NVIC.ICER[word].Set(0xffffffff)
 		arm.NVIC.ICPR[word].Set(0xffffffff)
 	}
+	arm.SCB.AIRCR.Set(0x5fa<<arm.SCB_AIRCR_VECTKEY_Pos | 3<<arm.SCB_AIRCR_PRIGROUP_Pos)
 	arm.AsmFull("msr BASEPRI, {b}", map[string]interface{}{"b": uint32(0)})
 }
 
@@ -75,7 +79,9 @@ func resetTickTimer() {
 	stm32.RCC.APB1RSTR.ClearBits(stm32.RCC_APB1RSTR_TIM2RST)
 }
 
-func putchar(byte) {}
+func putchar(value byte) {
+	_ = machine.Serial.WriteByte(value)
+}
 
 func getchar() byte { return 0 }
 

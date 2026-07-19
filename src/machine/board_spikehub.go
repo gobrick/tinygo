@@ -8,6 +8,8 @@ const (
 	PA5  = portA + 5
 	PA6  = portA + 6
 	PA7  = portA + 7
+	PA11 = portA + 11
+	PA12 = portA + 12
 	PA15 = portA + 15
 	PB15 = portB + 15
 
@@ -18,6 +20,20 @@ const (
 	GSCLK        = PB15
 	AF5_SPI1     = 5
 	AF9_TIM12    = 9
+	AF10_OTG_FS  = 10
+
+	USBCDC_DM_PIN = PA11
+	USBCDC_DP_PIN = PA12
+
+	HSEFrequency = 16_000_000
+
+	usb_STRING_PRODUCT      = "KinetiGo Hub"
+	usb_STRING_MANUFACTURER = "KinetiGo"
+)
+
+var (
+	usb_VID uint16 = 0x1209
+	usb_PID uint16 = 0x0001
 )
 
 var (
