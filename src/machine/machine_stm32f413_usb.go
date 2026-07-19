@@ -46,9 +46,10 @@ const (
 )
 
 const (
-	regEPCTL  = uintptr(0x00)
-	regEPINT  = uintptr(0x08)
-	regEPTSIZ = uintptr(0x10)
+	regEPCTL   = uintptr(0x00)
+	regEPINT   = uintptr(0x08)
+	regEPTSIZ  = uintptr(0x10)
+	regDTXFSTS = uintptr(0x18)
 )
 
 const (
@@ -91,9 +92,12 @@ const (
 	epintXFRC         = uint32(1 << 0)
 	epintTOC          = uint32(1 << 3)
 	epintSTUP         = uint32(1 << 3)
+	epintTXFE         = uint32(1 << 7)
 	eptsizXFRMask     = uint32(0x7ffff)
+	eptsizPKTCNTMask  = uint32(0x3ff << 19)
 	eptsizPKTCNT1     = uint32(1 << 19)
 	eptsizSTUPCNT3    = uint32(3 << 29)
+	dtxfstsWordsMask  = uint32(0xffff)
 )
 
 const (
@@ -110,6 +114,7 @@ const (
 	usbWaitLimit          = uint32(2_000_000)
 	usbControlPollLimit   = uint32(4_000_000)
 	usbDisconnectPeriods  = uint8(8)
+	usbINPacketCountMax   = uint32(1023)
 )
 
 // ck48SourcePLLI2SQ is RM0430 DCKCFGR2.CK48MSEL, not the generated PLLSAI name.
@@ -133,6 +138,13 @@ type stm32USBReceiveStatus struct {
 	packet uint8
 }
 
+type stm32USBInTransfer struct {
+	data   []byte
+	offset int
+	zlp    bool
+	active bool
+}
+
 var (
 	endPoints = []uint32{
 		usb.CONTROL_ENDPOINT:  usb.ENDPOINT_TYPE_CONTROL,
@@ -154,6 +166,8 @@ var (
 	stm32USBStatusOUT      bool
 	stm32USBAddress        uint8
 	stm32USBAddressPending bool
+	stm32USBEP3Transfer    stm32USBInTransfer
+	stm32USBEP3Aborted     bool
 )
 
 func usbRegister(address uintptr) *volatile.Register32 {
@@ -473,6 +487,8 @@ func handleUSBReset() {
 	stm32USBSetupReady = false
 	stm32USBStatusIN = false
 	stm32USBStatusOUT = false
+	stm32USBEP3Aborted = stm32USBEP3Aborted || stm32USBEP3Transfer.active
+	stm32USBEP3Transfer = stm32USBInTransfer{}
 	usbRegister(regDCFG).ClearBits(dcfgDADMask)
 	clearUSBEndpoints()
 	if !flushUSBTXFIFOs() {
@@ -564,15 +580,30 @@ func handleUSBInComplete() {
 		if pending&(1<<ep) == 0 {
 			continue
 		}
-		flags := usbInRegister(ep, regEPINT).Get() & usbRegister(regDIEPMSK).Get()
-		usbInRegister(ep, regEPINT).Set(flags)
+		flags := usbInRegister(ep, regEPINT).Get() & usbInInterruptMask(ep)
+		usbInRegister(ep, regEPINT).Set(flags &^ epintTXFE)
+		if flags&epintTXFE != 0 {
+			handleUSBInFIFOEmpty(ep)
+		}
 		if flags&epintXFRC != 0 {
 			handleUSBInTransfer(ep)
 		}
 	}
 }
 
+func usbInInterruptMask(ep uint32) uint32 {
+	mask := usbRegister(regDIEPMSK).Get()
+	if usbRegister(regDIEPEMPMSK).HasBits(1 << ep) {
+		mask |= epintTXFE
+	}
+	return mask
+}
+
 func handleUSBInTransfer(ep uint32) {
+	if ep == usb.CDC_ENDPOINT_IN {
+		completeUSBEP3Transfer()
+		return
+	}
 	if ep != 0 {
 		if int(ep) < len(usbTxHandler) && usbTxHandler[ep] != nil {
 			usbTxHandler[ep]()
@@ -593,6 +624,38 @@ func handleUSBInTransfer(ep uint32) {
 	}
 	stm32USBStatusOUT = true
 	armUSBControlOUT()
+}
+
+func handleUSBInFIFOEmpty(ep uint32) {
+	if ep != usb.CDC_ENDPOINT_IN || !stm32USBEP3Transfer.active {
+		usbRegister(regDIEPEMPMSK).ClearBits(1 << ep)
+		return
+	}
+	remaining := len(stm32USBEP3Transfer.data) - stm32USBEP3Transfer.offset
+	words := usbInRegister(ep, regDTXFSTS).Get() & dtxfstsWordsMask
+	count := usbFIFOChunkSize(remaining, words)
+	start := stm32USBEP3Transfer.offset
+	writeUSBFIFO(ep, stm32USBEP3Transfer.data[start:start+count])
+	stm32USBEP3Transfer.offset += count
+	if stm32USBEP3Transfer.offset == len(stm32USBEP3Transfer.data) {
+		usbRegister(regDIEPEMPMSK).ClearBits(1 << ep)
+	}
+}
+
+func completeUSBEP3Transfer() {
+	usbRegister(regDIEPEMPMSK).ClearBits(1 << usb.CDC_ENDPOINT_IN)
+	if !stm32USBEP3Transfer.active {
+		return
+	}
+	if stm32USBEP3Transfer.zlp {
+		stm32USBEP3Transfer.zlp = false
+		startUSBEP3Hardware(0, 1)
+		return
+	}
+	stm32USBEP3Transfer = stm32USBInTransfer{}
+	if usbTxHandler[usb.CDC_ENDPOINT_IN] != nil {
+		usbTxHandler[usb.CDC_ENDPOINT_IN]()
+	}
 }
 
 func handleUSBOutComplete() {
@@ -639,6 +702,9 @@ func initEndpoint(ep, config uint32) {
 		value := usbPacketSize | typeBits | ep<<epctlTXFNUMPos | epctlSD0PID | epctlUSBAEP
 		usbInRegister(ep, regEPCTL).Set(value)
 		usbRegister(regDAINTMSK).SetBits(1 << ep)
+		if ep == usb.CDC_ENDPOINT_IN {
+			retireAbortedUSBEP3Transfer()
+		}
 		return
 	}
 	value := usbPacketSize | typeBits | epctlSD0PID | epctlUSBAEP
@@ -651,6 +717,14 @@ func initUSBControlEndpoint() {
 	usbInRegister(0, regEPCTL).Set(epctlUSBAEP)
 	usbOutRegister(0, regEPCTL).Set(epctlUSBAEP)
 	usbRegister(regDAINTMSK).SetBits(1 | 1<<16)
+}
+
+func retireAbortedUSBEP3Transfer() {
+	if !stm32USBEP3Aborted || usbTxHandler[usb.CDC_ENDPOINT_IN] == nil {
+		return
+	}
+	stm32USBEP3Aborted = false
+	usbTxHandler[usb.CDC_ENDPOINT_IN]()
 }
 
 func armEP0Setup() {
@@ -684,16 +758,62 @@ func applyUSBAddress() {
 	stm32USBAddressPending = false
 }
 
-// SendUSBInPacket accepts non-control data as a 7a discard-only write.
+// SendUSBInPacket starts a control or CDC bulk-IN transfer.
 func SendUSBInPacket(ep uint32, data []byte) bool {
 	if ep == 0 {
 		sendUSBPacket(ep, data)
 		return true
 	}
+	if ep == usb.CDC_ENDPOINT_IN {
+		return startUSBEP3Transfer(data)
+	}
 	if int(ep) < len(usbTxHandler) && usbTxHandler[ep] != nil {
 		usbTxHandler[ep]()
 	}
 	return true
+}
+
+func startUSBEP3Transfer(data []byte) bool {
+	size, packets, zlp, ok := planUSBINTransfer(len(data))
+	if !ok || stm32USBEP3Transfer.active {
+		return false
+	}
+	stm32USBEP3Transfer = stm32USBInTransfer{data: data, zlp: zlp, active: true}
+	startUSBEP3Hardware(size, packets)
+	return true
+}
+
+func startUSBEP3Hardware(size, packets uint32) {
+	ep := uint32(usb.CDC_ENDPOINT_IN)
+	value := size&eptsizXFRMask | packets<<19&eptsizPKTCNTMask
+	usbInRegister(ep, regEPTSIZ).Set(value)
+	usbInRegister(ep, regEPCTL).SetBits(epctlCNAK | epctlEPENA)
+	if size > 0 {
+		usbRegister(regDIEPEMPMSK).SetBits(1 << ep)
+	}
+}
+
+func planUSBINTransfer(length int) (uint32, uint32, bool, bool) {
+	if length < 0 || length > int(usbPacketSize*usbINPacketCountMax) {
+		return 0, 0, false, false
+	}
+	if length == 0 {
+		return 0, 1, false, true
+	}
+	size := uint32(length)
+	packets := (size + usbPacketSize - 1) / usbPacketSize
+	return size, packets, size%usbPacketSize == 0, true
+}
+
+func usbFIFOChunkSize(remaining int, freeWords uint32) int {
+	count := remaining
+	if count > int(usbPacketSize) {
+		count = int(usbPacketSize)
+	}
+	if capacity := int(freeWords * 4); count > capacity {
+		count = capacity
+	}
+	return count
 }
 
 //go:noinline
