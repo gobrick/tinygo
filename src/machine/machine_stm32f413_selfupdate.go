@@ -20,9 +20,14 @@ const (
 
 // coldResetFlags are the reset causes after which nothing a running program
 // stored can be trusted, whatever the backup registers happen to hold.
+//
+// The pin flag is deliberately not among them. Measured on the hub: a software
+// reset reports 0x14000000, software and pin together, because the internal
+// reset controller drives NRST low. Rejecting on the pin flag rejects every
+// real request. A button press on its own is still refused, because that does
+// not set the software flag this requires.
 const coldResetFlags = stm32.RCC_CSR_PORRSTF | stm32.RCC_CSR_BORRSTF |
-	stm32.RCC_CSR_PADRSTF | stm32.RCC_CSR_WDGRSTF |
-	stm32.RCC_CSR_WWDGRSTF | stm32.RCC_CSR_LPWRRSTF
+	stm32.RCC_CSR_WDGRSTF | stm32.RCC_CSR_WWDGRSTF | stm32.RCC_CSR_LPWRRSTF
 
 var selfUpdateResetPending bool
 
