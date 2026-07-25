@@ -111,7 +111,8 @@ const (
 	usbPLLM               = uint32(8)
 	usbPLLN               = uint32(96)
 	usbPLLQ               = uint32(4)
-	usbWaitLimit          = uint32(100_000)
+	usbWaitLimit          = uint32(2_000_000)
+	usbResetWaitLimit     = uint32(20_000)
 	usbDisconnectPeriods  = uint8(8)
 	usbINPacketCountMax   = uint32(1023)
 )
@@ -298,11 +299,11 @@ func waitRCCClear(mask uint32) bool {
 func resetOTGFS() bool {
 	resetOTGPeripheral()
 	usbRegister(regGUSBCFG).SetBits(gusbcfgPHYSEL)
-	if !waitUSBRegisterSet(regGRSTCTL, grstctlAHBIDL) {
+	if !waitUSBRegisterSet(regGRSTCTL, grstctlAHBIDL, usbWaitLimit) {
 		return false
 	}
 	usbRegister(regGRSTCTL).SetBits(grstctlCSRST)
-	if !waitUSBRegisterClear(regGRSTCTL, grstctlCSRST) {
+	if !waitUSBRegisterClear(regGRSTCTL, grstctlCSRST, usbWaitLimit) {
 		return false
 	}
 	usbRegister(regGUSBCFG).SetBits(gusbcfgFDMOD)
@@ -315,8 +316,8 @@ func resetOTGPeripheral() {
 	stm32.RCC.AHB2RSTR.ClearBits(stm32.RCC_AHB2RSTR_OTGFSRST)
 }
 
-func waitUSBRegisterSet(address uintptr, mask uint32) bool {
-	for count := uint32(0); count < usbWaitLimit; count++ {
+func waitUSBRegisterSet(address uintptr, mask uint32, limit uint32) bool {
+	for count := uint32(0); count < limit; count++ {
 		if usbRegister(address).HasBits(mask) {
 			return true
 		}
@@ -324,8 +325,8 @@ func waitUSBRegisterSet(address uintptr, mask uint32) bool {
 	return false
 }
 
-func waitUSBRegisterClear(address uintptr, mask uint32) bool {
-	for count := uint32(0); count < usbWaitLimit; count++ {
+func waitUSBRegisterClear(address uintptr, mask uint32, limit uint32) bool {
+	for count := uint32(0); count < limit; count++ {
 		if usbRegister(address).Get()&mask == 0 {
 			return true
 		}
@@ -422,15 +423,15 @@ func fifoValue(start, depth uint16) uint32 {
 }
 
 func flushUSBFIFOs() bool {
-	return flushUSBTXFIFOs() && flushUSBRXFIFO()
+	return flushUSBTXFIFOs(usbWaitLimit) && flushUSBRXFIFO()
 }
 
-func flushUSBTXFIFOs() bool {
-	if !waitUSBRegisterSet(regGRSTCTL, grstctlAHBIDL) {
+func flushUSBTXFIFOs(limit uint32) bool {
+	if !waitUSBRegisterSet(regGRSTCTL, grstctlAHBIDL, limit) {
 		return false
 	}
 	usbRegister(regGRSTCTL).Set(grstctlTXFFLSH | grstctlTXFAll)
-	if !waitUSBRegisterClear(regGRSTCTL, grstctlTXFFLSH) {
+	if !waitUSBRegisterClear(regGRSTCTL, grstctlTXFFLSH, limit) {
 		return false
 	}
 	return true
@@ -438,7 +439,7 @@ func flushUSBTXFIFOs() bool {
 
 func flushUSBRXFIFO() bool {
 	usbRegister(regGRSTCTL).Set(grstctlRXFFLSH)
-	return waitUSBRegisterClear(regGRSTCTL, grstctlRXFFLSH)
+	return waitUSBRegisterClear(regGRSTCTL, grstctlRXFFLSH, usbWaitLimit)
 }
 
 func configureUSBInterruptMasks() {
@@ -493,7 +494,7 @@ func handleUSBReset() {
 	stm32USBEP3Transfer = stm32USBInTransfer{}
 	usbRegister(regDCFG).ClearBits(dcfgDADMask)
 	clearUSBEndpoints()
-	if !flushUSBTXFIFOs() {
+	if !flushUSBTXFIFOs(usbResetWaitLimit) {
 		disconnectUSB()
 		return
 	}
@@ -585,7 +586,7 @@ func handleUSBSetup() {
 			return
 		}
 		stm32USBAwaitingData = true
-		armUSBControlOUT()
+		armUSBControlData()
 		return
 	}
 	dispatchUSBSetup(setup)
@@ -781,6 +782,14 @@ func armEP0Setup() {
 }
 
 func armUSBControlOUT() {
+	usbOutRegister(0, regEPTSIZ).Set(eptsizPKTCNT1 | usbPacketSize)
+	usbOutRegister(0, regEPCTL).SetBits(epctlCNAK | epctlEPENA | epctlUSBAEP)
+}
+
+// armUSBControlData arms the OUT data stage and keeps the setup count, so a
+// host that abandons the transfer can still be heard. The status stage above
+// must NOT do this: it runs on every control-IN, including enumeration.
+func armUSBControlData() {
 	usbOutRegister(0, regEPTSIZ).Set(eptsizSTUPCNT3 | eptsizPKTCNT1 | usbPacketSize)
 	usbOutRegister(0, regEPCTL).SetBits(epctlCNAK | epctlEPENA | epctlUSBAEP)
 }
