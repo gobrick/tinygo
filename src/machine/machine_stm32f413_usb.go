@@ -658,6 +658,7 @@ func handleUSBInTransfer(ep uint32) {
 		stm32USBStatusIN = false
 		applyUSBAddress()
 		armEP0Setup()
+		completeSelfUpdateReset()
 		return
 	}
 	stm32USBStatusOUT = true

@@ -1,0 +1,88 @@
+//go:build stm32f413
+
+package machine
+
+import (
+	"device/arm"
+	"device/stm32"
+)
+
+// SelfUpdateTouchBaud is the line rate that, together with a DTR high-to-low
+// edge, asks a running program to reboot into update mode.
+const SelfUpdateTouchBaud = 1200
+
+// The request is a word and its complement, so indeterminate memory after a
+// cold start cannot look like one.
+const (
+	selfUpdateToken           = uint32(0x4b475544)
+	selfUpdateTokenComplement = ^uint32(0x4b475544)
+)
+
+// coldResetFlags are the reset causes after which nothing a running program
+// stored can be trusted, whatever the backup registers happen to hold.
+const coldResetFlags = stm32.RCC_CSR_PORRSTF | stm32.RCC_CSR_BORRSTF |
+	stm32.RCC_CSR_PADRSTF | stm32.RCC_CSR_WDGRSTF |
+	stm32.RCC_CSR_WWDGRSTF | stm32.RCC_CSR_LPWRRSTF
+
+var selfUpdateResetPending bool
+
+// ScheduleSelfUpdateReset records a one-shot request and arms a reset for the
+// end of the current control transfer. Resetting from the setup handler would
+// abort the status stage the host is still waiting on.
+func ScheduleSelfUpdateReset() {
+	enableBackupDomain()
+	stm32.RTC.SetBKP0R(selfUpdateToken)
+	stm32.RTC.SetBKP1R(selfUpdateTokenComplement)
+	if stm32.RTC.GetBKP0R() != selfUpdateToken || stm32.RTC.GetBKP1R() != selfUpdateTokenComplement {
+		return
+	}
+	stm32.RCC.CSR.SetBits(stm32.RCC_CSR_RMVF)
+	selfUpdateResetPending = true
+}
+
+// completeSelfUpdateReset resets once the status stage has actually gone out.
+func completeSelfUpdateReset() {
+	if !selfUpdateResetPending {
+		return
+	}
+	selfUpdateResetPending = false
+	arm.SystemReset()
+}
+
+// TakeSelfUpdateRequest reports a genuine request exactly once. It clears the
+// request before returning, so a transfer that fails leaves the hub coming back
+// as the old application instead of looping into update mode.
+func TakeSelfUpdateRequest() bool {
+	flags := stm32.RCC.CSR.Get()
+	stm32.RCC.CSR.SetBits(stm32.RCC_CSR_RMVF)
+
+	enableBackupDomain()
+	token, complement := stm32.RTC.GetBKP0R(), stm32.RTC.GetBKP1R()
+	stm32.RTC.SetBKP0R(0)
+	stm32.RTC.SetBKP1R(0)
+
+	if token != selfUpdateToken || complement != selfUpdateTokenComplement {
+		return false
+	}
+	return flags&stm32.RCC_CSR_SFTRSTF != 0 && flags&coldResetFlags == 0
+}
+
+// SelfUpdateResetFlags reports the reset causes latched at startup. It exists
+// so a probe can say what the hardware actually did rather than infer it.
+func SelfUpdateResetFlags() uint32 {
+	return stm32.RCC.CSR.Get()
+}
+
+// SelfUpdateTokenWords reports the backup words as found, for the same reason.
+func SelfUpdateTokenWords() (uint32, uint32) {
+	enableBackupDomain()
+	return stm32.RTC.GetBKP0R(), stm32.RTC.GetBKP1R()
+}
+
+// enableBackupDomain unlocks the registers that survive a system reset. Neither
+// the clock nor the write protection survives one, so both are re-established
+// on every pass rather than assumed to still be in place.
+func enableBackupDomain() {
+	stm32.RCC.APB1ENR.SetBits(stm32.RCC_APB1ENR_PWREN)
+	stm32.PWR.CR.SetBits(stm32.PWR_CR_DBP)
+}

@@ -185,16 +185,18 @@ func cdcSetup(setup usb.Setup) bool {
 			usbLineInfo.bDataBits = b[6]
 		}
 
+		previousDTR := usbLineInfo.lineState&usb_CDC_LINESTATE_DTR != 0
 		if setup.BRequest == usb_CDC_SET_CONTROL_LINE_STATE {
 			usbLineInfo.lineState = setup.WValueL
 		}
 
 		if setup.BRequest == usb_CDC_SET_LINE_CODING || setup.BRequest == usb_CDC_SET_CONTROL_LINE_STATE {
-			// auto-reset into the bootloader
-			if usbLineInfo.dwDTERate == 1200 && usbLineInfo.lineState&usb_CDC_LINESTATE_DTR == 0 {
+			// A host asks for the bootloader by dropping DTR at 1200 baud. The
+			// drop has to be an edge: host tooling that opens a port with DTR
+			// already low should not reboot the device it is only probing.
+			droppedDTR := previousDTR && usbLineInfo.lineState&usb_CDC_LINESTATE_DTR == 0
+			if usbLineInfo.dwDTERate == 1200 && droppedDTR {
 				machine.EnterBootloader()
-			} else {
-				// TODO: cancel any reset
 			}
 			machine.SendZlp()
 		}
