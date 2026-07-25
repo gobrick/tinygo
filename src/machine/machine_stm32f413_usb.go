@@ -112,7 +112,6 @@ const (
 	usbPLLN               = uint32(96)
 	usbPLLQ               = uint32(4)
 	usbWaitLimit          = uint32(100_000)
-	usbControlPollLimit   = uint32(4_000)
 	usbDisconnectPeriods  = uint8(8)
 	usbINPacketCountMax   = uint32(1023)
 )
@@ -159,6 +158,9 @@ var (
 	stm32USBInterrupt      interrupt.Interrupt
 	stm32USBSetup          [8]byte
 	stm32USBSetupReady     bool
+	stm32USBControlData    [usbPacketSize]byte
+	stm32USBControlCount   uint16
+	stm32USBAwaitingData   bool
 	stm32USBOutCount       [NumberOfUSBEndpoints]uint8
 	stm32USBEP0Data        []byte
 	stm32USBEP0Offset      int
@@ -529,6 +531,10 @@ func handleUSBReceiveStatus(status stm32USBReceiveStatus) {
 }
 
 func handleUSBOUTData(status stm32USBReceiveStatus) {
+	if status.ep == 0 && stm32USBAwaitingData {
+		readUSBControlData(status.count)
+		return
+	}
 	if int(status.ep) >= len(udd_ep_out_cache_buffer) {
 		drainUSBRXFIFO(status.count)
 		return
@@ -539,6 +545,16 @@ func handleUSBOUTData(status stm32USBReceiveStatus) {
 	}
 	readUSBRXFIFO(udd_ep_out_cache_buffer[status.ep][:count], status.count)
 	stm32USBOutCount[status.ep] = uint8(count)
+}
+
+func readUSBControlData(count uint16) {
+	if uint32(count) > usbPacketSize {
+		drainUSBRXFIFO(count)
+		stallUSBControl()
+		return
+	}
+	readUSBRXFIFO(stm32USBControlData[:count], count)
+	stm32USBControlCount = count
 }
 
 func readUSBRXFIFO(destination []byte, count uint16) {
@@ -561,6 +577,21 @@ func handleUSBSetup() {
 	setup := usb.NewSetup(stm32USBSetup[:])
 	stm32USBStatusIN = setup.BmRequestType&usb.REQUEST_DIRECTION == 0
 	stm32USBStatusOUT = false
+	stm32USBAwaitingData = false
+	stm32USBControlCount = 0
+	if setup.BmRequestType&usb.REQUEST_DIRECTION == 0 && setup.WLength > 0 {
+		if uint32(setup.WLength) > usbPacketSize {
+			stallUSBControl()
+			return
+		}
+		stm32USBAwaitingData = true
+		armUSBControlOUT()
+		return
+	}
+	dispatchUSBSetup(setup)
+}
+
+func dispatchUSBSetup(setup usb.Setup) {
 	ok := false
 	if setup.BmRequestType&usb.REQUEST_TYPE == usb.REQUEST_STANDARD {
 		ok = handleStandardSetup(setup)
@@ -568,10 +599,16 @@ func handleUSBSetup() {
 		ok = usbSetupHandler[setup.WIndex](setup)
 	}
 	if !ok {
-		USBDev.SetStallEPIn(0)
-		USBDev.SetStallEPOut(0)
-		armEP0Setup()
+		stallUSBControl()
 	}
+}
+
+func stallUSBControl() {
+	stm32USBAwaitingData = false
+	stm32USBControlCount = 0
+	USBDev.SetStallEPIn(0)
+	USBDev.SetStallEPOut(0)
+	armEP0Setup()
 }
 
 func handleUSBInComplete() {
@@ -669,6 +706,17 @@ func handleUSBOutComplete() {
 		if ep == 0 && flags&epintSTUP != 0 && stm32USBSetupReady {
 			stm32USBSetupReady = false
 			handleUSBSetup()
+			continue
+		}
+		if ep == 0 && flags&epintXFRC != 0 && stm32USBAwaitingData {
+			stm32USBAwaitingData = false
+			setup := usb.NewSetup(stm32USBSetup[:])
+			if stm32USBControlCount != setup.WLength {
+				stallUSBControl()
+				continue
+			}
+			dispatchUSBSetup(setup)
+			continue
 		}
 		if ep == 0 && flags&epintXFRC != 0 && stm32USBStatusOUT {
 			stm32USBStatusOUT = false
@@ -733,7 +781,7 @@ func armEP0Setup() {
 }
 
 func armUSBControlOUT() {
-	usbOutRegister(0, regEPTSIZ).Set(eptsizPKTCNT1 | usbPacketSize)
+	usbOutRegister(0, regEPTSIZ).Set(eptsizSTUPCNT3 | eptsizPKTCNT1 | usbPacketSize)
 	usbOutRegister(0, regEPCTL).SetBits(epctlCNAK | epctlEPENA | epctlUSBAEP)
 }
 
@@ -851,23 +899,11 @@ func writeUSBFIFO(ep uint32, data []byte) {
 
 func ReceiveUSBControlPacket() ([cdcLineInfoSize]byte, error) {
 	var result [cdcLineInfoSize]byte
-	armUSBControlOUT()
-	defer armEP0Setup()
-	for count := uint32(0); count < usbControlPollLimit; count++ {
-		if usbRegister(regGINTSTS).Get()&gintRXFLVL == 0 {
-			continue
-		}
-		status := decodeSTM32USBReceiveStatus(usbRegister(regGRXSTSP).Get())
-		if status.packet == rxPacketData && status.ep == 0 {
-			readUSBRXFIFO(result[:], status.count)
-			if status.count != cdcLineInfoSize {
-				return result, ErrUSBBytesRead
-			}
-			return result, nil
-		}
-		handleUSBReceiveStatus(status)
+	if stm32USBControlCount != cdcLineInfoSize {
+		return result, ErrUSBBytesRead
 	}
-	return result, ErrUSBReadTimeout
+	copy(result[:], stm32USBControlData[:cdcLineInfoSize])
+	return result, nil
 }
 
 func handleEndpointRx(ep uint32) []byte {
