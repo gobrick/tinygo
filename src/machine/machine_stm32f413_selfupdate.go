@@ -78,10 +78,39 @@ func SelfUpdateResetFlags() uint32 {
 	return stm32.RCC.CSR.Get()
 }
 
+// SelfUpdateBackupControl reports the backup domain control register, so a
+// probe can show whether the domain came back configured or reset.
+func SelfUpdateBackupControl() uint32 {
+	enableBackupDomain()
+	return stm32.RCC.BDCR.Get()
+}
+
 // SelfUpdateTokenWords reports the backup words as found, for the same reason.
 func SelfUpdateTokenWords() (uint32, uint32) {
 	enableBackupDomain()
 	return stm32.RTC.GetBKP0R(), stm32.RTC.GetBKP1R()
+}
+
+// FlushCDCOutput pushes queued console output onto the wire. A reset discards
+// whatever is still sitting in the transmit ring, so a result printed and then
+// reset away is a result nobody sees.
+func FlushCDCOutput() bool {
+	flusher, ok := USBCDC.(interface{ Flush() })
+	if !ok {
+		return false
+	}
+	flusher.Flush()
+	return true
+}
+
+// DiscardCDCInput drops anything the host sent before the session began, so a
+// stale byte cannot be mistaken for the start of a frame.
+func DiscardCDCInput() {
+	for USBCDC.Buffered() > 0 {
+		if _, err := USBCDC.ReadByte(); err != nil {
+			return
+		}
+	}
 }
 
 // enableBackupDomain unlocks the registers that survive a system reset. Neither
