@@ -1,0 +1,6 @@
+{
+  "inherits": ["spikehub"],
+  "linkerscript": "targets/spikehub-bootpolicy.ld",
+  "extra-files": ["src/runtime/runtime_bootpolicy_probe.S"],
+  "ldflags": ["--defsym=probe_stack=0xffffffff"]
+}
