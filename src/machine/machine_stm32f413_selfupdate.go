@@ -91,6 +91,19 @@ func SelfUpdateTokenWords() (uint32, uint32) {
 	return stm32.RTC.GetBKP0R(), stm32.RTC.GetBKP1R()
 }
 
+// FeedSelfUpdateWatchdog reloads an already-running independent watchdog.
+func FeedSelfUpdateWatchdog() {
+	stm32.IWDG.KR.Set(iwdgKeyReset)
+}
+
+// SelfUpdatePowerOK reports whether VDD is above the roughly 3.14 V rising PVD threshold.
+func SelfUpdatePowerOK() bool {
+	stm32.RCC.APB1ENR.SetBits(stm32.RCC_APB1ENR_PWREN)
+	stm32.PWR.CR.ReplaceBits(7, stm32.PWR_CR_PLS_Msk>>stm32.PWR_CR_PLS_Pos, stm32.PWR_CR_PLS_Pos)
+	stm32.PWR.CR.SetBits(stm32.PWR_CR_PVDE)
+	return stm32.PWR.GetCSR_PVDO() == stm32.PWR_CSR_PVDO_Higher
+}
+
 // FlushCDCOutput pushes queued console output onto the wire. A reset discards
 // whatever is still sitting in the transmit ring, so a result printed and then
 // reset away is a result nobody sees.

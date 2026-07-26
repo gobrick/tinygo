@@ -1,0 +1,4 @@
+{
+  "inherits": ["spikehub"],
+  "extra-files": ["src/runtime/runtime_commit_vectors.S"]
+}

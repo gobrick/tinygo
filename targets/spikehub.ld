@@ -45,10 +45,24 @@ SECTIONS
         _stack1_top = .;
     } >RAM
 
+    .ramvectors.commit ALIGN(512) :
+    {
+        _sdata = .;
+        __commit_vectors_start = .;
+        KEEP(*(.ramvectors.commit))
+        __commit_vectors_end = .;
+    } >RAM AT>FLASH_TEXT
+
+    .ramfuncs.commit ALIGN(4) :
+    {
+        __commit_code_start = .;
+        KEEP(*(.ramfuncs.commit))
+        __commit_code_end = .;
+    } >RAM AT>FLASH_TEXT
+
     .data :
     {
         . = ALIGN(4);
-        _sdata = .;
         *(.data)
         *(.data.*)
         . = ALIGN(4);
@@ -75,10 +89,12 @@ SECTIONS
     }
 }
 
-_sidata = LOADADDR(.data);
+_sidata = LOADADDR(.ramvectors.commit);
+__commit_vectors_load_start = LOADADDR(.ramvectors.commit);
+__commit_code_load_start = LOADADDR(.ramfuncs.commit);
 _heap_start = _ebss;
 _heap_end = ORIGIN(RAM) + LENGTH(RAM);
-_globals_start = _sdata;
+_globals_start = ADDR(.data);
 _globals_end = _ebss;
 __flash_data_start = LOADADDR(.data) + SIZEOF(.data);
 __flash_data_end = ORIGIN(FLASH_TEXT) + LENGTH(FLASH_TEXT);
