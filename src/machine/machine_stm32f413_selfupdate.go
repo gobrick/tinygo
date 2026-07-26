@@ -5,6 +5,7 @@ package machine
 import (
 	"device/arm"
 	"device/stm32"
+	_ "unsafe"
 )
 
 // SelfUpdateTouchBaud is the line rate that, together with a DTR high-to-low
@@ -16,6 +17,10 @@ const SelfUpdateTouchBaud = 1200
 const (
 	selfUpdateToken           = uint32(0x4b475544)
 	selfUpdateTokenComplement = ^uint32(0x4b475544)
+	selfUpdateIdentity        = uint32(0x4b474944)
+	selfUpdateIdentityInverse = ^uint32(0x4b474944)
+	selfUpdateMaxImage        = uint32(256 << 10)
+	selfUpdateFlushTicks      = int64(2_000_000_000 / 16)
 )
 
 // coldResetFlags are the reset causes after which nothing a running program
@@ -96,6 +101,32 @@ func FeedSelfUpdateWatchdog() {
 	stm32.IWDG.KR.Set(iwdgKeyReset)
 }
 
+// ArmSelfUpdateIdentity records the image span that must identify itself after reset.
+func ArmSelfUpdateIdentity(length uint32) bool {
+	enableBackupDomain()
+	stm32.RTC.SetBKP2R(0)
+	stm32.RTC.SetBKP3R(selfUpdateIdentityInverse)
+	stm32.RTC.SetBKP4R(length)
+	stm32.RTC.SetBKP2R(selfUpdateIdentity)
+	return stm32.RTC.GetBKP2R() == selfUpdateIdentity &&
+		stm32.RTC.GetBKP3R() == selfUpdateIdentityInverse &&
+		stm32.RTC.GetBKP4R() == length
+}
+
+// TakeSelfUpdateIdentity returns one pending post-reset image report.
+func TakeSelfUpdateIdentity() (uint32, bool) {
+	enableBackupDomain()
+	token := stm32.RTC.GetBKP2R()
+	inverse := stm32.RTC.GetBKP3R()
+	length := stm32.RTC.GetBKP4R()
+	stm32.RTC.SetBKP2R(0)
+	stm32.RTC.SetBKP3R(0)
+	stm32.RTC.SetBKP4R(0)
+	validLength := length >= 4 && length <= selfUpdateMaxImage && length&3 == 0
+	return length, token == selfUpdateIdentity &&
+		inverse == selfUpdateIdentityInverse && validLength
+}
+
 // SelfUpdatePowerOK reports whether VDD is above the roughly 3.14 V rising PVD threshold.
 func SelfUpdatePowerOK() bool {
 	stm32.RCC.APB1ENR.SetBits(stm32.RCC_APB1ENR_PWREN)
@@ -108,12 +139,23 @@ func SelfUpdatePowerOK() bool {
 // whatever is still sitting in the transmit ring, so a result printed and then
 // reset away is a result nobody sees.
 func FlushCDCOutput() bool {
-	flusher, ok := USBCDC.(interface{ Flush() })
+	output, ok := USBCDC.(interface {
+		DTR() bool
+		Flush() bool
+	})
 	if !ok {
 		return false
 	}
-	flusher.Flush()
-	return true
+	deadline := selfUpdateTicks() + selfUpdateFlushTicks
+	for {
+		if output.Flush() {
+			return true
+		}
+		if !output.DTR() || selfUpdateTicks() >= deadline {
+			return false
+		}
+		FeedSelfUpdateWatchdog()
+	}
 }
 
 // DiscardCDCInput drops anything the host sent before the session began, so a
@@ -133,3 +175,6 @@ func enableBackupDomain() {
 	stm32.RCC.APB1ENR.SetBits(stm32.RCC_APB1ENR_PWREN)
 	stm32.PWR.CR.SetBits(stm32.PWR_CR_DBP)
 }
+
+//go:linkname selfUpdateTicks runtime.ticks
+func selfUpdateTicks() int64

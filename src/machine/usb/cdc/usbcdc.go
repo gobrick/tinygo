@@ -11,7 +11,8 @@ import (
 )
 
 var (
-	ErrBufferEmpty = errors.New("USB-CDC buffer empty")
+	ErrBufferEmpty  = errors.New("USB-CDC buffer empty")
+	ErrDisconnected = errors.New("USB-CDC host disconnected")
 )
 
 const cdcLineInfoSize = 7
@@ -79,20 +80,20 @@ func (usbcdc *USBCDC) Configure(config machine.UARTConfig) error {
 	return nil
 }
 
-// Flush flushes buffered data.
-func (usbcdc *USBCDC) Flush() {
-	for usbcdc.tx.Used() > 0 {
-		gosched()
-	}
+// Flush reports whether buffered data reached a connected host.
+func (usbcdc *USBCDC) Flush() bool {
+	return usbcdc.DTR() && usbcdc.tx.Used() == 0
 }
 
 // Write data to the USBCDC.
 func (usbcdc *USBCDC) Write(data []byte) (n int, err error) {
-	n = len(data)
-	if usbLineInfo.lineState <= 0 {
-		return n, nil
+	if !usbcdc.DTR() {
+		return 0, ErrDisconnected
 	}
 	for len(data) > 0 {
+		if !usbcdc.DTR() {
+			return n, ErrDisconnected
+		}
 		tosend := min(len(data), int(usbcdc.tx.Free()))
 		if tosend == 0 {
 			gosched()
@@ -100,6 +101,7 @@ func (usbcdc *USBCDC) Write(data []byte) (n int, err error) {
 		}
 		usbcdc.tx.Put(data[:tosend])
 		data = data[tosend:]
+		n += tosend
 		usbcdc.kickTx()
 	}
 	return n, nil
@@ -137,8 +139,8 @@ func (usbcdc *USBCDC) sendFromRing() {
 // WriteByte writes a byte of data to the USB CDC interface.
 func (usbcdc *USBCDC) WriteByte(c byte) error {
 	usbcdc.wbuf[0] = c
-	usbcdc.Write(usbcdc.wbuf[:])
-	return nil
+	_, err := usbcdc.Write(usbcdc.wbuf[:])
+	return err
 }
 
 func (usbcdc *USBCDC) DTR() bool {

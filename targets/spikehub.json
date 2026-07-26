@@ -7,6 +7,8 @@
   "linkerscript": "targets/spikehub.ld",
   "extra-files": [
     "src/device/stm32/stm32f413.s",
+    "src/runtime/runtime_commit_engine.S",
+    "src/runtime/runtime_commit_vectors.S",
     "src/runtime/runtime_spikehub.S"
   ]
 }
