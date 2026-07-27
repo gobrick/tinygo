@@ -1,4 +1,4 @@
-//go:build stm32f413
+//go:build stm32f413 && !spikehubcore
 
 package machine
 

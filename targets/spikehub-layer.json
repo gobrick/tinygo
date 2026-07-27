@@ -1,0 +1,7 @@
+{
+  "inherits": ["spikehub"],
+  "ldflags": [
+    "--defsym=flash_origin=0x08010000",
+    "--defsym=flash_end=0x08020000"
+  ]
+}

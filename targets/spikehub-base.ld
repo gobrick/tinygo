@@ -1,5 +1,5 @@
-/* Stock frozen loader jumps to 0x08008000 (S2 vector-table probe, 2026-07-17;
- * matches spike-rt deploy address). Sector 11 stays reserved for breadcrumbs. */
+/* Commit-free Spike Hub layout. Engine-bearing targets override this script
+ * with spikehub.ld, which adds the SRAM commit sections and their load images. */
 flash_origin = DEFINED(flash_origin) ? flash_origin : 0x08008000;
 flash_end = DEFINED(flash_end) ? flash_end : 0x080e0000;
 flash_trailer = DEFINED(flash_trailer) ? flash_trailer : 0;
@@ -70,24 +70,10 @@ SECTIONS
         _stack1_top = .;
     } >RAM
 
-    .ramvectors.commit ALIGN(512) :
-    {
-        _sdata = .;
-        __commit_vectors_start = .;
-        KEEP(*(.ramvectors.commit))
-        __commit_vectors_end = .;
-    } >RAM AT>FLASH_TEXT
-
-    .ramfuncs.commit ALIGN(4) :
-    {
-        __commit_code_start = .;
-        KEEP(*(.ramfuncs.commit))
-        __commit_code_end = .;
-    } >RAM AT>FLASH_TEXT
-
     .data :
     {
         . = ALIGN(4);
+        _sdata = .;
         *(.data)
         *(.data.*)
         . = ALIGN(4);
@@ -114,9 +100,7 @@ SECTIONS
     }
 }
 
-_sidata = LOADADDR(.ramvectors.commit);
-__commit_vectors_load_start = LOADADDR(.ramvectors.commit);
-__commit_code_load_start = LOADADDR(.ramfuncs.commit);
+_sidata = LOADADDR(.data);
 _heap_start = _ebss;
 _heap_end = ORIGIN(RAM) + LENGTH(RAM);
 _globals_start = ADDR(.data);

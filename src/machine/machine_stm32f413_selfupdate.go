@@ -62,6 +62,7 @@ func completeSelfUpdateReset() {
 // TakeSelfUpdateRequest reports a genuine request exactly once. It clears the
 // request before returning, so a transfer that fails leaves the hub coming back
 // as the old application instead of looping into update mode.
+//go:section .core.request
 func TakeSelfUpdateRequest() bool {
 	flags := stm32.RCC.CSR.Get()
 	stm32.RCC.CSR.SetBits(stm32.RCC_CSR_RMVF)
