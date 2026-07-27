@@ -15,7 +15,7 @@ ENTRY(Reset_Handler)
 
 SECTIONS
 {
-    .text :
+    .vectors :
     {
         KEEP(*(.isr_vector))
         KEEP(*(.after_isr_vector))
@@ -25,6 +25,17 @@ SECTIONS
         ASSERT(. <= ORIGIN(FLASH_TEXT) + 0x264, "first firmware info overlaps second")
         . = ORIGIN(FLASH_TEXT) + 0x264;
         KEEP(*(.fw_info2))
+        ASSERT(. <= ORIGIN(FLASH_TEXT) + 0x284, "second firmware info overlaps slot header")
+        . = ORIGIN(FLASH_TEXT) + 0x284;
+    } >FLASH_TEXT
+
+    .slot_header (NOLOAD) :
+    {
+        . += 24;
+    } >FLASH_TEXT
+
+    .text :
+    {
         *(.text)
         *(.text.*)
         *(.rodata)
