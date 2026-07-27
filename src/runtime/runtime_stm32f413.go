@@ -7,14 +7,17 @@ import (
 	"device/stm32"
 	"machine"
 	_ "machine/usb/cdc"
+	"unsafe"
 )
 
 const (
-	applicationFlashOrigin = 0x08008000
-	HCLK_FREQ_HZ           = 16000000
-	PCLK1_FREQ_HZ          = HCLK_FREQ_HZ
-	PCLK2_FREQ_HZ          = HCLK_FREQ_HZ
+	HCLK_FREQ_HZ  = 16000000
+	PCLK1_FREQ_HZ = HCLK_FREQ_HZ
+	PCLK2_FREQ_HZ = HCLK_FREQ_HZ
 )
+
+//go:extern __isr_vector
+var isrVector [0]uint32
 
 func init() {
 	arm.DisableInterrupts()
@@ -34,7 +37,7 @@ func init() {
 func bootloaderHandoffAssumptions() {}
 
 func initVectorTable() {
-	arm.SCB.VTOR.Set(applicationFlashOrigin)
+	arm.SCB.VTOR.Set(uint32(uintptr(unsafe.Pointer(&isrVector))))
 	arm.Asm("dsb")
 	arm.Asm("isb")
 }

@@ -1,8 +1,11 @@
 /* Stock frozen loader jumps to 0x08008000 (S2 vector-table probe, 2026-07-17;
  * matches spike-rt deploy address). Sector 11 stays reserved for breadcrumbs. */
+flash_origin = DEFINED(flash_origin) ? flash_origin : 0x08008000;
+flash_end = DEFINED(flash_end) ? flash_end : 0x080e0000;
+
 MEMORY
 {
-    FLASH_TEXT (rw) : ORIGIN = 0x08008000, LENGTH = 864K
+    FLASH_TEXT (rw) : ORIGIN = flash_origin, LENGTH = flash_end - flash_origin
     RAM (xrw)       : ORIGIN = 0x20000000, LENGTH = 320K
 }
 
