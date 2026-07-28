@@ -16,6 +16,50 @@ handoff_menu_tail:
     mov r11, r0
     cpsid i
 
+handoff_stop_tim6:
+    movw r1, #0x1000
+    movt r1, #0x4000
+    movs r2, #0
+    str r2, [r1]
+    str r2, [r1, #0x0c]
+    str r2, [r1, #0x10]
+    movw r3, #0x3800
+    movt r3, #0x4002
+    ldr r2, [r3, #0x20]
+    orr r2, r2, #0x10
+    str r2, [r3, #0x20]
+    bic r2, r2, #0x10
+    str r2, [r3, #0x20]
+    ldr r2, [r3, #0x40]
+    bic r2, r2, #0x10
+    str r2, [r3, #0x40]
+
+handoff_stop_dma1_stream5:
+    movw r0, #0
+    movt r0, #0x20
+    ldr r2, [r3, #0x30]
+    orr r2, r2, r0
+    str r2, [r3, #0x30]
+    movw r1, #0x6088
+    movt r1, #0x4002
+    movs r2, #0
+    str r2, [r1]
+    dsb
+    movw r1, #0x6000
+    movt r1, #0x4002
+    movw r2, #0x0f40
+    str r2, [r1, #0x0c]
+    ldr r2, [r3, #0x10]
+    orr r2, r2, r0
+    str r2, [r3, #0x10]
+    bic r2, r2, r0
+    str r2, [r3, #0x10]
+    movw r2, #0x0f40
+    str r2, [r1, #0x0c]
+    ldr r2, [r3, #0x30]
+    bic r2, r2, r0
+    str r2, [r3, #0x30]
+
 handoff_stop_tim7:
     movw r1, #0x1400
     movt r1, #0x4000

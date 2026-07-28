@@ -37,11 +37,13 @@ const (
 const coldResetFlags = stm32.RCC_CSR_PORRSTF | stm32.RCC_CSR_BORRSTF |
 	stm32.RCC_CSR_WDGRSTF | stm32.RCC_CSR_WWDGRSTF | stm32.RCC_CSR_LPWRRSTF
 
+const coldPowerOnFlags = stm32.RCC_CSR_PORRSTF | stm32.RCC_CSR_BORRSTF
+
 var selfUpdateResetPending bool
 
-// SelfUpdateColdStart reports a reset that cannot have been requested by software.
+// SelfUpdateColdStart reports a power-on or brownout reset.
 func SelfUpdateColdStart() bool {
-	return stm32.RCC.CSR.Get()&coldResetFlags != 0
+	return stm32.RCC.CSR.Get()&coldPowerOnFlags != 0
 }
 
 // ScheduleSelfUpdateReset records a one-shot request and arms a reset for the
