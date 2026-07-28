@@ -5,9 +5,6 @@ package machine
 import "device/stm32"
 
 const (
-	PA5  = portA + 5
-	PA6  = portA + 6
-	PA7  = portA + 7
 	PA11 = portA + 11
 	PA12 = portA + 12
 	PA15 = portA + 15

@@ -20,6 +20,7 @@ const (
 	selfUpdateIdentity        = uint32(0x4b474944)
 	selfUpdateChoice          = uint32(0x4b474348)
 	selfUpdateAttempt         = uint32(0x4b474154)
+	launcherMenuRequest       = uint32(0x4b474d4e)
 	selfUpdateMaxImage        = uint32(256 << 10)
 	selfUpdateFlushTicks      = int64(2_000_000_000 / 16)
 	selfUpdateMaxAttempts     = uint32(3)
@@ -196,6 +197,26 @@ func ClearBootAttempts() {
 	stm32.RTC.SetBKP10R(0)
 	stm32.RTC.SetBKP11R(0)
 	stm32.RTC.SetBKP12R(0)
+}
+
+// RequestLauncherMenu records a reset-surviving request for the on-hub menu.
+func RequestLauncherMenu() bool {
+	enableBackupDomain()
+	stm32.RTC.SetBKP13R(0)
+	stm32.RTC.SetBKP14R(^launcherMenuRequest)
+	stm32.RTC.SetBKP13R(launcherMenuRequest)
+	return stm32.RTC.GetBKP13R() == launcherMenuRequest &&
+		stm32.RTC.GetBKP14R() == ^launcherMenuRequest
+}
+
+// TakeLauncherMenuRequest reports and clears one on-hub menu request.
+func TakeLauncherMenuRequest() bool {
+	enableBackupDomain()
+	token := stm32.RTC.GetBKP13R()
+	complement := stm32.RTC.GetBKP14R()
+	stm32.RTC.SetBKP13R(0)
+	stm32.RTC.SetBKP14R(0)
+	return token == launcherMenuRequest && complement == ^launcherMenuRequest
 }
 
 // SelfUpdatePowerOK reports whether VDD is above the roughly 3.14 V rising PVD threshold.

@@ -12,6 +12,27 @@ import (
 
 var deviceIDAddr = []uintptr{0x1FFF7A10, 0x1FFF7A14, 0x1FFF7A18}
 
+const (
+	PA0 = portA + 0
+	PA1 = portA + 1
+	PA2 = portA + 2
+	PA3 = portA + 3
+	PA4 = portA + 4
+	PA5 = portA + 5
+	PA6 = portA + 6
+	PA7 = portA + 7
+
+	PB0 = portB + 0
+	PB1 = portB + 1
+
+	PC0 = portC + 0
+	PC1 = portC + 1
+	PC2 = portC + 2
+	PC3 = portC + 3
+	PC4 = portC + 4
+	PC5 = portC + 5
+)
+
 func CPUFrequency() uint32 {
 	return 16000000
 }

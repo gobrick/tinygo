@@ -3,6 +3,105 @@
 .thumb
 .eabi_attribute 7, 77
 
+.section .text.handoff_menu_tail,"ax",%progbits
+.balign 4
+
+.global handoff_menu_tail
+.type handoff_menu_tail,%function
+.thumb_func
+handoff_menu_tail:
+    mrs r1, ipsr
+    cmp r1, #0
+    bne handoff_wrong_mode
+    mov r11, r0
+    cpsid i
+
+handoff_stop_tim7:
+    movw r1, #0x1400
+    movt r1, #0x4000
+    movs r2, #0
+    str r2, [r1]
+    str r2, [r1, #0x0c]
+    str r2, [r1, #0x10]
+    movw r3, #0x3800
+    movt r3, #0x4002
+    ldr r2, [r3, #0x20]
+    orr r2, r2, #0x20
+    str r2, [r3, #0x20]
+    bic r2, r2, #0x20
+    str r2, [r3, #0x20]
+    ldr r2, [r3, #0x40]
+    bic r2, r2, #0x20
+    str r2, [r3, #0x40]
+
+handoff_stop_adc:
+    movw r1, #0x2000
+    movt r1, #0x4001
+    movs r2, #0
+    str r2, [r1, #0x08]
+    str r2, [r1, #0x04]
+    ldr r0, [r1, #0x4c]
+    str r2, [r1]
+    ldr r2, [r3, #0x24]
+    orr r2, r2, #0x100
+    str r2, [r3, #0x24]
+    bic r2, r2, #0x100
+    str r2, [r3, #0x24]
+    ldr r2, [r3, #0x44]
+    bic r2, r2, #0x100
+    str r2, [r3, #0x44]
+
+handoff_stop_button_gpio:
+    movw r1, #0
+    movt r1, #0x4002
+    movw r2, #0
+    movt r2, #2
+    str r2, [r1, #0x18]
+    movs r3, #0x0c
+    ldr r2, [r1]
+    bic r2, r2, r3
+    str r2, [r1]
+    ldr r2, [r1, #0x08]
+    bic r2, r2, r3
+    str r2, [r1, #0x08]
+    ldr r2, [r1, #0x0c]
+    bic r2, r2, r3
+    str r2, [r1, #0x0c]
+    movs r3, #2
+    ldr r2, [r1, #0x04]
+    bic r2, r2, r3
+    str r2, [r1, #0x04]
+    movs r3, #0xf0
+    ldr r2, [r1, #0x20]
+    bic r2, r2, r3
+    str r2, [r1, #0x20]
+    adds r1, #0x800
+    movw r2, #0
+    movt r2, #0x10
+    str r2, [r1, #0x18]
+    movw r3, #0x0300
+    ldr r2, [r1]
+    bic r2, r2, r3
+    str r2, [r1]
+    ldr r2, [r1, #0x08]
+    bic r2, r2, r3
+    str r2, [r1, #0x08]
+    ldr r2, [r1, #0x0c]
+    bic r2, r2, r3
+    str r2, [r1, #0x0c]
+    movs r3, #0x10
+    ldr r2, [r1, #0x04]
+    bic r2, r2, r3
+    str r2, [r1, #0x04]
+    movw r3, #0
+    movt r3, #0x000f
+    ldr r2, [r1, #0x20]
+    bic r2, r2, r3
+    str r2, [r1, #0x20]
+    b handoff_after_menu_cleanup
+
+.size handoff_menu_tail, .-handoff_menu_tail
+
 .section .text.handoff_tail,"ax",%progbits
 .balign 4
 
@@ -21,6 +120,7 @@ handoff_assert_thread:
 handoff_mask_interrupts:
     cpsid i
 
+handoff_after_menu_cleanup:
     // Stop SysTick before any pending state is cleared.
 handoff_stop_systick:
     movw r1, #0xe010

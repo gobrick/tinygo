@@ -22,3 +22,20 @@ fw_info2:
 .ascii "SPIKE Prime"
 .zero 4
 .size fw_info2, .-fw_info2
+
+.section .slot_supervisor,"a",%progbits
+.global kinetigo_button_supervisor
+.type kinetigo_button_supervisor,%object
+kinetigo_button_supervisor:
+.word 0x4b475356
+.size kinetigo_button_supervisor, .-kinetigo_button_supervisor
+
+.section .text.kinetigo_mark_button_supervisor,"ax",%progbits
+.balign 2
+.global kinetigo_mark_button_supervisor
+.type kinetigo_mark_button_supervisor,%function
+.thumb_func
+kinetigo_mark_button_supervisor:
+    ldr r0, =kinetigo_button_supervisor
+    bx lr
+.size kinetigo_mark_button_supervisor, .-kinetigo_mark_button_supervisor
