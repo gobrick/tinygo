@@ -1,11 +1,13 @@
 {
-  "inherits": ["spikehub-base"],
+  "inherits": ["spikehub"],
   "build-tags": ["spikehubcore"],
+  "linkerscript": "targets/spikehub.ld",
   "extra-files": [
-    "src/runtime/runtime_handoff.S",
-    "src/runtime/runtime_spikehub.S"
+    "src/runtime/runtime_commit_engine.S",
+    "src/runtime/runtime_commit_vectors.S"
   ],
   "ldflags": [
+    "--defsym=core_image=1",
     "--defsym=flash_origin=0x08008000",
     "--defsym=flash_end=0x08010000",
     "--defsym=flash_trailer=4"

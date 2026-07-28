@@ -2,5 +2,5 @@
 
 package machine
 
-// EnterBootloader leaves the recovery core running.
-func EnterBootloader() {}
+// EnterBootloader restarts the core with an update request.
+func EnterBootloader() { ScheduleSelfUpdateReset() }

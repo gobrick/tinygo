@@ -3,6 +3,7 @@
 flash_origin = DEFINED(flash_origin) ? flash_origin : 0x08008000;
 flash_end = DEFINED(flash_end) ? flash_end : 0x080e0000;
 flash_trailer = DEFINED(flash_trailer) ? flash_trailer : 0;
+slot_header_size = DEFINED(core_image) ? 0 : 24;
 
 MEMORY
 {
@@ -32,7 +33,7 @@ SECTIONS
 
     .slot_header (NOLOAD) :
     {
-        . += 24;
+        . += slot_header_size;
     } >FLASH_TEXT
 
     .core.request :

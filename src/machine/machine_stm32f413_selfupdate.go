@@ -18,9 +18,11 @@ const (
 	selfUpdateToken           = uint32(0x4b475544)
 	selfUpdateTokenComplement = ^uint32(0x4b475544)
 	selfUpdateIdentity        = uint32(0x4b474944)
-	selfUpdateIdentityInverse = ^uint32(0x4b474944)
+	selfUpdateChoice          = uint32(0x4b474348)
+	selfUpdateAttempt         = uint32(0x4b474154)
 	selfUpdateMaxImage        = uint32(256 << 10)
 	selfUpdateFlushTicks      = int64(2_000_000_000 / 16)
+	selfUpdateMaxAttempts     = uint32(3)
 )
 
 // coldResetFlags are the reset causes after which nothing a running program
@@ -35,6 +37,11 @@ const coldResetFlags = stm32.RCC_CSR_PORRSTF | stm32.RCC_CSR_BORRSTF |
 	stm32.RCC_CSR_WDGRSTF | stm32.RCC_CSR_WWDGRSTF | stm32.RCC_CSR_LPWRRSTF
 
 var selfUpdateResetPending bool
+
+// SelfUpdateColdStart reports a reset that cannot have been requested by software.
+func SelfUpdateColdStart() bool {
+	return stm32.RCC.CSR.Get()&coldResetFlags != 0
+}
 
 // ScheduleSelfUpdateReset records a one-shot request and arms a reset for the
 // end of the current control transfer. Resetting from the setup handler would
@@ -62,6 +69,7 @@ func completeSelfUpdateReset() {
 // TakeSelfUpdateRequest reports a genuine request exactly once. It clears the
 // request before returning, so a transfer that fails leaves the hub coming back
 // as the old application instead of looping into update mode.
+
 //go:section .core.request
 func TakeSelfUpdateRequest() bool {
 	flags := stm32.RCC.CSR.Get()
@@ -102,30 +110,92 @@ func FeedSelfUpdateWatchdog() {
 	stm32.IWDG.KR.Set(iwdgKeyReset)
 }
 
-// ArmSelfUpdateIdentity records the image span that must identify itself after reset.
-func ArmSelfUpdateIdentity(length uint32) bool {
+// ArmSelfUpdateIdentity records the installed plan and image span.
+func ArmSelfUpdateIdentity(plan, origin, length uint32) bool {
 	enableBackupDomain()
 	stm32.RTC.SetBKP2R(0)
-	stm32.RTC.SetBKP3R(selfUpdateIdentityInverse)
-	stm32.RTC.SetBKP4R(length)
+	stm32.RTC.SetBKP3R(plan)
+	stm32.RTC.SetBKP4R(origin)
+	stm32.RTC.SetBKP5R(length)
+	stm32.RTC.SetBKP6R(^(plan ^ origin ^ length))
 	stm32.RTC.SetBKP2R(selfUpdateIdentity)
 	return stm32.RTC.GetBKP2R() == selfUpdateIdentity &&
-		stm32.RTC.GetBKP3R() == selfUpdateIdentityInverse &&
-		stm32.RTC.GetBKP4R() == length
+		stm32.RTC.GetBKP3R() == plan &&
+		stm32.RTC.GetBKP4R() == origin &&
+		stm32.RTC.GetBKP5R() == length &&
+		stm32.RTC.GetBKP6R() == ^(plan^origin^length)
 }
 
 // TakeSelfUpdateIdentity returns one pending post-reset image report.
-func TakeSelfUpdateIdentity() (uint32, bool) {
+func TakeSelfUpdateIdentity() (uint32, uint32, uint32, bool) {
 	enableBackupDomain()
 	token := stm32.RTC.GetBKP2R()
-	inverse := stm32.RTC.GetBKP3R()
-	length := stm32.RTC.GetBKP4R()
+	plan := stm32.RTC.GetBKP3R()
+	origin := stm32.RTC.GetBKP4R()
+	length := stm32.RTC.GetBKP5R()
+	inverse := stm32.RTC.GetBKP6R()
 	stm32.RTC.SetBKP2R(0)
 	stm32.RTC.SetBKP3R(0)
 	stm32.RTC.SetBKP4R(0)
+	stm32.RTC.SetBKP5R(0)
+	stm32.RTC.SetBKP6R(0)
 	validLength := length >= 4 && length <= selfUpdateMaxImage && length&3 == 0
-	return length, token == selfUpdateIdentity &&
-		inverse == selfUpdateIdentityInverse && validLength
+	validOrigin := origin >= 0x08010000 && origin < 0x080e0000
+	return plan, origin, length, token == selfUpdateIdentity &&
+		plan < 12 && inverse == ^(plan^origin^length) && validOrigin && validLength
+}
+
+// SetChosenSlot stores a persistent one-based slot choice.
+func SetChosenSlot(slot uint32) bool {
+	if slot < 1 || slot > 6 {
+		return false
+	}
+	enableBackupDomain()
+	stm32.RTC.SetBKP7R(0)
+	stm32.RTC.SetBKP8R(slot)
+	stm32.RTC.SetBKP9R(^slot)
+	stm32.RTC.SetBKP7R(selfUpdateChoice)
+	return stm32.RTC.GetBKP7R() == selfUpdateChoice &&
+		stm32.RTC.GetBKP8R() == slot && stm32.RTC.GetBKP9R() == ^slot
+}
+
+// ChosenSlot returns the persistent one-based slot choice.
+func ChosenSlot() (uint32, bool) {
+	enableBackupDomain()
+	token := stm32.RTC.GetBKP7R()
+	slot := stm32.RTC.GetBKP8R()
+	inverse := stm32.RTC.GetBKP9R()
+	return slot, token == selfUpdateChoice && inverse == ^slot &&
+		slot >= 1 && slot <= 6
+}
+
+// BeginBootAttempt increments the persistent launcher-attempt counter.
+func BeginBootAttempt() bool {
+	enableBackupDomain()
+	count := stm32.RTC.GetBKP11R()
+	valid := stm32.RTC.GetBKP10R() == selfUpdateAttempt &&
+		stm32.RTC.GetBKP12R() == ^count
+	if !valid {
+		count = 0
+	}
+	if count >= selfUpdateMaxAttempts {
+		return false
+	}
+	count++
+	stm32.RTC.SetBKP10R(0)
+	stm32.RTC.SetBKP11R(count)
+	stm32.RTC.SetBKP12R(^count)
+	stm32.RTC.SetBKP10R(selfUpdateAttempt)
+	return stm32.RTC.GetBKP10R() == selfUpdateAttempt &&
+		stm32.RTC.GetBKP11R() == count && stm32.RTC.GetBKP12R() == ^count
+}
+
+// ClearBootAttempts clears the persistent launcher-attempt counter.
+func ClearBootAttempts() {
+	enableBackupDomain()
+	stm32.RTC.SetBKP10R(0)
+	stm32.RTC.SetBKP11R(0)
+	stm32.RTC.SetBKP12R(0)
 }
 
 // SelfUpdatePowerOK reports whether VDD is above the roughly 3.14 V rising PVD threshold.
