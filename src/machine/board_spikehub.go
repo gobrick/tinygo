@@ -55,6 +55,8 @@ const (
 	shutdownDACTrigger     = 1 << 2
 	shutdownDACTriangle    = 2 << 6
 	shutdownDACAmplitude   = 7 << 8
+	shutdownDACDMAEnable   = 1 << 12
+	shutdownDACDMAUnderrun = 1 << 13
 	shutdownDMAStream      = 5
 	shutdownDMAEnable      = 1 << 0
 	shutdownDMAFlags       = 0x0f40
@@ -118,7 +120,8 @@ func Shutdown() {
 	stm32.TIM6.CR1.Set(0)
 	stm32.TIM6.DIER.Set(0)
 	stm32.TIM6.SR.Set(0)
-	stopShutdownDMA()
+	underrun := stopShutdownDMA()
+	enableShutdownDAC(underrun)
 	setShutdownDACBias()
 	startBoardDelayTimer()
 	prepareShutdownTone(shutdownHighReload)
@@ -194,13 +197,24 @@ func setShutdownDACControl(control uint32) {
 	stm32.DAC.CR.Set(current&^shutdownDACMask | control&shutdownDACMask)
 }
 
-func stopShutdownDMA() {
+func stopShutdownDMA() bool {
+	underrun := stm32.DAC.SR.HasBits(shutdownDACDMAUnderrun)
+	setShutdownDACControl(stm32.DAC.CR.Get() &^ shutdownDACDMAEnable)
 	stream := &stm32.DMA1.ST[shutdownDMAStream]
 	stream.CR.ClearBits(shutdownDMAEnable)
 	for stream.CR.HasBits(shutdownDMAEnable) {
 	}
 	stream.CR.Set(0)
 	stm32.DMA1.HIFCR.Set(shutdownDMAFlags)
+	stm32.RCC.APB1ENR.ClearBits(stm32.RCC_APB1ENR_DACEN)
+	return underrun
+}
+
+func enableShutdownDAC(underrun bool) {
+	stm32.RCC.APB1ENR.SetBits(stm32.RCC_APB1ENR_DACEN)
+	if underrun {
+		stm32.DAC.SR.Set(shutdownDACDMAUnderrun)
+	}
 }
 
 func ConfigureLAT() {

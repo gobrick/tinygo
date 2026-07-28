@@ -34,6 +34,14 @@ handoff_stop_tim6:
     bic r2, r2, #0x10
     str r2, [r3, #0x40]
 
+handoff_stop_dac_dma:
+    movw r1, #0x7400
+    movt r1, #0x4000
+    ldr r2, [r1, #0x34]
+    ldr r2, [r1]
+    bic r2, r2, #0x1000
+    str r2, [r1]
+
 handoff_stop_dma1_stream5:
     movw r0, #0
     movt r0, #0x20
@@ -59,6 +67,67 @@ handoff_stop_dma1_stream5:
     ldr r2, [r3, #0x30]
     bic r2, r2, r0
     str r2, [r3, #0x30]
+
+handoff_reset_dac:
+    movw r0, #0
+    movt r0, #0x2000
+    ldr r2, [r3, #0x20]
+    orr r2, r2, r0
+    str r2, [r3, #0x20]
+    bic r2, r2, r0
+    str r2, [r3, #0x20]
+    ldr r2, [r3, #0x40]
+    bic r2, r2, r0
+    str r2, [r3, #0x40]
+
+handoff_stop_speaker_gpio:
+    movw r1, #0
+    movt r1, #0x4002
+    movw r2, #0
+    movt r2, #0x10
+    str r2, [r1, #0x18]
+    movw r3, #0x0300
+    ldr r2, [r1]
+    bic r2, r2, r3
+    str r2, [r1]
+    ldr r2, [r1, #0x08]
+    bic r2, r2, r3
+    str r2, [r1, #0x08]
+    ldr r2, [r1, #0x0c]
+    bic r2, r2, r3
+    str r2, [r1, #0x0c]
+    movs r3, #0x10
+    ldr r2, [r1, #0x04]
+    bic r2, r2, r3
+    str r2, [r1, #0x04]
+    movw r3, #0
+    movt r3, #0x000f
+    ldr r2, [r1, #0x20]
+    bic r2, r2, r3
+    str r2, [r1, #0x20]
+    adds r1, #0x800
+    movw r2, #0
+    movt r2, #0x0400
+    str r2, [r1, #0x18]
+    movw r3, #0
+    movt r3, #0x0030
+    ldr r2, [r1]
+    bic r2, r2, r3
+    str r2, [r1]
+    ldr r2, [r1, #0x08]
+    bic r2, r2, r3
+    str r2, [r1, #0x08]
+    ldr r2, [r1, #0x0c]
+    bic r2, r2, r3
+    str r2, [r1, #0x0c]
+    movw r3, #0x0400
+    ldr r2, [r1, #0x04]
+    bic r2, r2, r3
+    str r2, [r1, #0x04]
+    movw r3, #0x0f00
+    ldr r2, [r1, #0x24]
+    bic r2, r2, r3
+    str r2, [r1, #0x24]
 
 handoff_stop_tim7:
     movw r1, #0x1400
