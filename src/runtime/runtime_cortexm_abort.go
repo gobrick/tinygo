@@ -1,4 +1,4 @@
-//go:build cortexm && !nxp && !qemu
+//go:build cortexm && !nxp && !qemu && !spikehub
 
 package runtime
 

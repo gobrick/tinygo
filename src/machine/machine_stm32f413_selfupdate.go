@@ -203,6 +203,7 @@ func ClearBootAttempts() {
 
 // RequestLauncherMenu records a reset-surviving request for the on-hub menu.
 func RequestLauncherMenu() bool {
+	StopPorts()
 	enableBackupDomain()
 	stm32.RTC.SetBKP13R(0)
 	stm32.RTC.SetBKP14R(^launcherMenuRequest)

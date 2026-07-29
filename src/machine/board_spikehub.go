@@ -5,12 +5,6 @@ package machine
 import "device/stm32"
 
 const (
-	PA11 = portA + 11
-	PA12 = portA + 12
-	PA13 = portA + 13
-	PA15 = portA + 15
-	PB15 = portB + 15
-
 	SPI0_SCK_PIN = PA5
 	SPI0_SDI_PIN = PA6
 	SPI0_SDO_PIN = PA7
@@ -109,6 +103,7 @@ func PowerOff() {
 
 // Shutdown plays the descending cue fully, then drops the power latch.
 func Shutdown() {
+	StopPorts()
 	stm32.RCC.AHB1ENR.SetBits(stm32.RCC_AHB1ENR_DMA1EN | stm32.RCC_AHB1ENR_GPIOAEN | stm32.RCC_AHB1ENR_GPIOCEN)
 	stm32.RCC.APB1ENR.SetBits(stm32.RCC_APB1ENR_DACEN | stm32.RCC_APB1ENR_TIM6EN)
 	stm32.GPIOC.BSRR.Set(1 << 26)
