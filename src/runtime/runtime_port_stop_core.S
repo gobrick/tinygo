@@ -20,6 +20,8 @@ kinetigo_stop_ports:
 .type kinetigo_hardfault_entry,%function
 .thumb_func
 kinetigo_hardfault_entry:
+    mov r12, lr
     bl kinetigo_stop_ports
+    mov lr, r12
     b HardFault_Handler
 .size kinetigo_hardfault_entry, .-kinetigo_hardfault_entry
