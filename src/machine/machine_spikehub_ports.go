@@ -18,11 +18,13 @@ const (
 // A single-pin transition would leave one driving while the other is not,
 // which is the maximum-drive condition.
 const (
-	portDModeMask   = uint32(0xf) << 16
-	portDModeOutput = uint32(0x5) << 16
-	portDModeAlt    = uint32(0xa) << 16
-	portDSetBoth    = uint32(0x300)
-	portDResetBoth  = uint32(0x300) << 16
+	portDModeMask    = uint32(0xf) << 16
+	portDModeOutput  = uint32(0x5) << 16
+	portDModeAlt     = uint32(0xa) << 16
+	portDModeForward = uint32(0x6) << 16
+	portDModeReverse = uint32(0x9) << 16
+	portDSetBoth     = uint32(0x300)
+	portDResetBoth   = uint32(0x300) << 16
 )
 
 // PortPinSet describes one external port's board wiring.
@@ -126,6 +128,42 @@ func PortDSetBaud(baud uint32) bool {
 	return true
 }
 
+// PortDProbeRX powers the port and samples the receive line as a plain input,
+// reporting how many transitions it saw and the level it finished at.
+func PortDProbeRX(samples int) (uint32, bool) {
+	StopPorts()
+	InitPorts()
+	PB2.Low()
+	PD2.Configure(PinConfig{Mode: PinInput})
+	last := PD2.Get()
+	changes := uint32(0)
+	for i := 0; i < samples; i++ {
+		if level := PD2.Get(); level != last {
+			changes++
+			last = level
+		}
+	}
+	return changes, last
+}
+
+// PortDListen opens the port at one baud and counts how many bytes arrive
+// cleanly against how many framing or noise errors occur.
+func PortDListen(baud uint32, samples int) (uint32, uint32) {
+	if !PortDOpen(baud) {
+		return 0, 0
+	}
+	good, bad := uint32(0), uint32(0)
+	for i := 0; i < samples; i++ {
+		switch _, status := PortDRead(); status {
+		case PortData:
+			good++
+		case PortFault:
+			bad++
+		}
+	}
+	return good, bad
+}
+
 // PortDRead performs one nonblocking receive attempt.
 func PortDRead() (byte, PortReadStatus) {
 	status := stm32.UART5.SR.Get()
@@ -153,23 +191,29 @@ func PortDTransmitComplete() bool {
 	return stm32.UART5.SR.HasBits(stm32.USART_SR_TC)
 }
 
-// PortDDrive applies the two inverted PWM compare values.
-func PortDDrive(pin1, pin2 uint32) bool {
-	if pin1 > PortPWMTop || pin2 > PortPWMTop {
+// PortDDrive chops one bridge input and holds the other high, the way the
+// reference driver does. Emulating the held pin with a compare of zero looked
+// equivalent and was not.
+func PortDDrive(duty uint32, forward bool) bool {
+	if duty > PortPWMTop {
 		return false
 	}
 	setupPortDPWM()
-	stm32.TIM4.CCR3.Set(pin1)
-	stm32.TIM4.CCR4.Set(pin2)
-	stm32.TIM4.EGR.Set(stm32.TIM_EGR_UG)
-	if portDDriving {
-		return true
+	if forward {
+		stm32.TIM4.CCR3.Set(duty)
+	} else {
+		stm32.TIM4.CCR4.Set(duty)
 	}
+	stm32.TIM4.EGR.Set(stm32.TIM_EGR_UG)
+	mode, hold := portDModeReverse, uint32(1)<<8
+	if forward {
+		mode, hold = portDModeForward, uint32(1)<<9
+	}
+	stm32.GPIOB.BSRR.Set(hold)
 	stm32.GPIOB.AFRH.ReplaceBits(AF2_TIM4|AF2_TIM4<<4, 0xff, 0)
 	stm32.GPIOB.OTYPER.ClearBits(portDSetBoth)
 	stm32.GPIOB.PUPDR.ClearBits(portDModeMask)
-	stm32.GPIOB.OSPEEDR.ReplaceBits(portDModeOutput, portDModeMask, 0)
-	stm32.GPIOB.MODER.ReplaceBits(portDModeAlt, portDModeMask, 0)
+	stm32.GPIOB.MODER.ReplaceBits(mode, portDModeMask, 0)
 	portDDriving = true
 	return true
 }
