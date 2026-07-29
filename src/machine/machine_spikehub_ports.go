@@ -14,6 +14,17 @@ const (
 	PortPWMTop    = uint32(1333)
 )
 
+// PB8 and PB9 share one mode register, so both bridge inputs change together.
+// A single-pin transition would leave one driving while the other is not,
+// which is the maximum-drive condition.
+const (
+	portDModeMask   = uint32(0xf) << 16
+	portDModeOutput = uint32(0x5) << 16
+	portDModeAlt    = uint32(0xa) << 16
+	portDSetBoth    = uint32(0x300)
+	portDResetBoth  = uint32(0x300) << 16
+)
+
 // PortPinSet describes one external port's board wiring.
 type PortPinSet struct {
 	Motor1 Pin
@@ -47,6 +58,7 @@ const (
 var (
 	portDSession bool
 	portDPWM     bool
+	portDDriving bool
 )
 
 //go:linkname stopPorts kinetigo_stop_ports
@@ -71,6 +83,7 @@ func StopPorts() {
 	stopPorts()
 	portDSession = false
 	portDPWM = false
+	portDDriving = false
 }
 
 // PortDOpen connects port D to UART5 at the requested baud.
@@ -93,6 +106,10 @@ func PortDSetBaud(baud uint32) bool {
 	if baud == 0 {
 		return false
 	}
+	divisor := (PCLK1_FREQ_HZ + baud/2) / baud
+	if divisor < 16 || divisor > 0xffff {
+		return false
+	}
 	PB2.High()
 	stm32.RCC.APB1ENR.SetBits(stm32.RCC_APB1ENR_UART5EN)
 	stm32.RCC.APB1RSTR.SetBits(stm32.RCC_APB1RSTR_UART5RST)
@@ -100,7 +117,7 @@ func PortDSetBaud(baud uint32) bool {
 	stm32.UART5.CR1.Set(0)
 	stm32.UART5.CR2.Set(0)
 	stm32.UART5.CR3.Set(0)
-	stm32.UART5.BRR.Set((PCLK1_FREQ_HZ + baud/2) / baud)
+	stm32.UART5.BRR.Set(divisor)
 	clearPortDUART()
 	stm32.UART5.CR1.Set(stm32.USART_CR1_TE | stm32.USART_CR1_RE | stm32.USART_CR1_UE)
 	if portDSession {
@@ -145,25 +162,34 @@ func PortDDrive(pin1, pin2 uint32) bool {
 	stm32.TIM4.CCR3.Set(pin1)
 	stm32.TIM4.CCR4.Set(pin2)
 	stm32.TIM4.EGR.Set(stm32.TIM_EGR_UG)
-	PB8.ConfigureAltFunc(PinConfig{Mode: PinModePWMOutput}, AF2_TIM4)
-	PB9.ConfigureAltFunc(PinConfig{Mode: PinModePWMOutput}, AF2_TIM4)
+	if portDDriving {
+		return true
+	}
+	stm32.GPIOB.AFRH.ReplaceBits(AF2_TIM4|AF2_TIM4<<4, 0xff, 0)
+	stm32.GPIOB.OTYPER.ClearBits(portDSetBoth)
+	stm32.GPIOB.PUPDR.ClearBits(portDModeMask)
+	stm32.GPIOB.OSPEEDR.ReplaceBits(portDModeOutput, portDModeMask, 0)
+	stm32.GPIOB.MODER.ReplaceBits(portDModeAlt, portDModeMask, 0)
+	portDDriving = true
 	return true
 }
 
 // PortDCoast drives both bridge inputs low as GPIO outputs.
 func PortDCoast() {
-	PB8.Low()
-	PB9.Low()
-	PB8.Configure(PinConfig{Mode: PinOutput})
-	PB9.Configure(PinConfig{Mode: PinOutput})
+	setPortDBoth(portDResetBoth)
 }
 
 // PortDBrake drives both bridge inputs high as GPIO outputs.
 func PortDBrake() {
-	PB8.High()
-	PB9.High()
-	PB8.Configure(PinConfig{Mode: PinOutput})
-	PB9.Configure(PinConfig{Mode: PinOutput})
+	setPortDBoth(portDSetBoth)
+}
+
+func setPortDBoth(bsrr uint32) {
+	stm32.GPIOB.BSRR.Set(bsrr)
+	stm32.GPIOB.OTYPER.ClearBits(portDSetBoth)
+	stm32.GPIOB.PUPDR.ClearBits(portDModeMask)
+	stm32.GPIOB.MODER.ReplaceBits(portDModeOutput, portDModeMask, 0)
+	portDDriving = false
 }
 
 func setupPortDPWM() {
