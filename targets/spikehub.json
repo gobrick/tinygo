@@ -2,6 +2,7 @@
   "inherits": ["spikehub-base"],
   "extra-files": [
     "src/runtime/runtime_handoff.S",
+    "src/runtime/runtime_port_stop.S",
     "src/runtime/runtime_spikehub.S"
   ]
 }

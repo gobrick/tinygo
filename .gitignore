@@ -18,6 +18,8 @@ src/device/sifive/*.go
 src/device/sifive/*.s
 src/device/stm32/*.go
 src/device/stm32/*.s
+# Patched to stop the motor before halting; see runtime_port_stop.S.
+!src/device/stm32/stm32f413.s
 src/device/kendryte/*.go
 src/device/kendryte/*.s
 src/device/renesas/*.go

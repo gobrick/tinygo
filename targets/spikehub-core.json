@@ -1,8 +1,11 @@
 {
-  "inherits": ["spikehub"],
+  "inherits": ["spikehub-base"],
   "build-tags": ["spikehubcore"],
   "linkerscript": "targets/spikehub.ld",
   "extra-files": [
+    "src/runtime/runtime_handoff.S",
+    "src/runtime/runtime_port_stop_core.S",
+    "src/runtime/runtime_spikehub.S",
     "src/runtime/runtime_commit_engine.S",
     "src/runtime/runtime_commit_vectors.S"
   ],
